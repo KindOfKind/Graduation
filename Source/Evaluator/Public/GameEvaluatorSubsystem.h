@@ -90,16 +90,15 @@ public:
 	ACrowdEvaluationHashGrid* GetEvaluationHashGrid();
 	bool IsEvaluatingMapAreas() const;
 
+	FString GetSaveFilePath() const;	// Gets save file path for evaluation data for the current map
+	bool WriteEvaluationDataToFileAsText();	// We can save the data as text to export it to external soft
+
 private:
 	void ResetEvaluationData();
 	bool LoadEvaluationDataFromFile();
 	bool WriteEvaluationDataToFile();
 	void SaveData(FArchive& Ar);
 	void LoadData(FArchive& Ar);
-	FString GetSaveFilePath() const;	// Gets save file path for evaluation data for the current map
-	bool WriteEvaluationDataToFileAsText();	// We can save the data as text to export it to external soft
-	bool TryLoadMapAreasConfigs();
-	void SaveMapAreasConfigs();
 
 	void ModifyMetaParams();
 	// @note: Some meta params are "taken" by other subsystems by default. It would be better to not use these params until ApplyMetaParams is called.

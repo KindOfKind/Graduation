@@ -15,6 +15,7 @@ ACCSSimpleObstacle::ACCSSimpleObstacle()
 
 	BoxComp = CreateDefaultSubobject<UBoxComponent>(TEXT("BoxComponent"));
 	BoxComp->SetupAttachment(RootSceneComp);
+	BoxComp->SetCollisionObjectType(ECC_WorldStatic);
 }
 
 void ACCSSimpleObstacle::BeginPlay()

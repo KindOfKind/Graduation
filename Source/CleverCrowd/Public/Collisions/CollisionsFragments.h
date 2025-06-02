@@ -19,4 +19,7 @@ struct CLEVERCROWD_API FCollisionFragment : public FMassFragment
 	// To-the-side Avoidance---
 	float AvoidingToSideTimeLeft = -1.f;
 	bool bAvoidToTheRight        = false;
+
+	// ORCA
+	int32 OrcaIndex = -1;
 };

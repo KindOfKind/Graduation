@@ -8,7 +8,7 @@ public class CleverCrowd : ModuleRules
 
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine" });
 		
-		PrivateDependencyModuleNames.AddRange(new string[] { "CCSUtils" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "CCSUtils", "ORCA" });
 		
 		// Mass framework modules
 		PrivateDependencyModuleNames.AddRange(new string[]

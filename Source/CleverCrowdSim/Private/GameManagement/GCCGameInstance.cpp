@@ -4,7 +4,7 @@
 #include "GameManagement/GCCGameInstance.h"
 
 #include "GameEvaluatorSubsystem.h"
-
+UE_DISABLE_OPTIMIZATION
 bool UGCCGameInstance::LoadMapAreasConfigsFromFile()
 {
 	UGameEvaluatorSubsystem* GameEvaluator = GetWorld()->GetGameInstance()->GetSubsystem<UGameEvaluatorSubsystem>();
@@ -31,7 +31,8 @@ bool UGCCGameInstance::LoadMapAreasConfigsFromFile()
 	
 	FMemoryReader Ar = FMemoryReader(BinData, true);
 	Ar.Seek(0);
-	
+
+	MapAreasDataConfigCached.Empty();
 	int32 Num = 0;
 	Ar << Num;
 	for (int32 i = 0; i < Num; i++)
@@ -42,6 +43,8 @@ bool UGCCGameInstance::LoadMapAreasConfigsFromFile()
 		Ar << MapAreaData;
 		MapAreasDataConfigCached.Add(MapAreaTypeId, MapAreaData);
 	}
+	
+	GameEvaluator->AveragedGroupAreasStatsCached.Empty();
 	Ar << GameEvaluator->AveragedGroupAreasStatsCached;
 
 	GameEvaluator->bLoadedMapAreasConfigs = !MapAreasDataConfigCached.IsEmpty();
@@ -89,3 +92,4 @@ void UGCCGameInstance::SaveMapAreasConfigsToFile()
 		UE_LOG(LogTemp, Error, TEXT("[%hs] Failed to save Map Areas data."), __FUNCTION__);
 	}
 }
+UE_ENABLE_OPTIMIZATION

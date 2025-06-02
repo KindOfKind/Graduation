@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "MassEntityTypes.h"
 #include "CrowdStatisticsSubsystem.generated.h"
 
 DECLARE_DELEGATE_TwoParams(FUpdatedEntitiesCountSignature, int32 /*NewCount*/, int32 /*OldCount*/);
@@ -29,6 +30,8 @@ struct CLEVERCROWD_API FCrowdStatistics
 	TArray<float> AverageEntitySpeedInClusters;	// Index - SectorType id. Current average movement speed among all entities of each cluster.
 	UPROPERTY()
 	TArray<float> AverageEntitySpeedInAreas;
+	
+	TMap<int32, TMap<FMassEntityHandle, float>> EntitiesTotalTimeInArea; // [AreaTypeId][Entity][TotalTimeInArea]
 
 	FUpdatedEntitiesCountSignature UpdatedEntitiesCountDelegate;
 

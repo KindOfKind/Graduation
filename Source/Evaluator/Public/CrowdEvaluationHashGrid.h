@@ -193,7 +193,7 @@ class EVALUATOR_API ACrowdEvaluationHashGrid : public AActor
 	friend class UGameEvaluatorSubsystem;
 
 public:
-	static constexpr int32 MinCrowdGroupArea = 80;
+	static constexpr int32 MinCrowdGroupArea = 120;
 	static constexpr int32 CellSize = 100;
 	float SnapshotsRate = 1.f;
 

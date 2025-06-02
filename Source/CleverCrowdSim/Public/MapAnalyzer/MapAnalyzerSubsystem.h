@@ -44,6 +44,8 @@ private:
 
 	TMultiMap<int32, FMapAreaData> MapAreasDataConfig;	// Index - MapArea type id. Config means these are "reference" values that have been evaluated during tests and now are used for classification.
 	int32 MaxMapAreaTypeId = 0;
+
+	int32 CellSizeCached = 100;
 	
 protected:
 	virtual void PostInitialize() override;

@@ -60,6 +60,7 @@ void UCommonStatisticsProcessor::Execute(FMassEntityManager& EntityManager, FMas
 		
 		for (int32 EntityIndex = 0; EntityIndex < NumEntities; ++EntityIndex)
 		{
+			FMassEntityHandle Entity              = Context.GetEntity(EntityIndex);
 			FTransformFragment& TransformFragment = TransformList[EntityIndex];
 			FMassForceFragment& ForceFragment     = ForceList[EntityIndex];
 			FMovementFragment& MovementFragment   = MovementList[EntityIndex];
@@ -80,6 +81,11 @@ void UCommonStatisticsProcessor::Execute(FMassEntityManager& EntityManager, FMas
 				}
 				EntitiesInAreas[ClusterFragment.AreaId] += 1;
 				AggregatedSpeedInAreas[ClusterFragment.AreaId].AddValue(MovementFragment.CurrentSpeed);
+
+				if (ClusterFragment.AreaId == ClusterFragment.PreviousAreaId)
+				{
+					CrowdStatistics->Stats.EntitiesTotalTimeInArea.FindOrAdd(ClusterFragment.AreaId).FindOrAdd(Entity) += DeltaSeconds;
+				}
 			}
 		}
 	});

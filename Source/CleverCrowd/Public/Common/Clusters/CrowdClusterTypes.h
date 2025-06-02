@@ -30,4 +30,6 @@ struct CLEVERCROWD_API FClusterFragment : public FMassFragment
 	int32 ClusterType;	// In what type of map cluster (e.g. spacious or dense area) the entity currently is
 	UPROPERTY()
 	int32 AreaId;
+
+	int32 PreviousAreaId;
 };

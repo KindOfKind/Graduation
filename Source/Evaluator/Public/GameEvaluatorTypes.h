@@ -8,6 +8,7 @@
 #include "Global/CrowdStatisticsSubsystem.h"
 #include "Grids/UtilsGridTypes.h"
 
+#define GET_VARIABLE_NAME(variable) #variable
 
 namespace GameEvaluator
 {
@@ -36,14 +37,29 @@ struct EVALUATOR_API TEvaluatorMetricParam
 {
 private:
 	T Value;
+	FString Name = "None";
 
 public:
+	TEvaluatorMetricParam() = delete;
+	TEvaluatorMetricParam(const FString& InName) : Name(InName)
+	{
+		Value = T();
+	};
+	TEvaluatorMetricParam(const T& InValue, const FString& InName) : Value(InValue), Name(InName) {};
+	
 	inline T& Get() { return Value; }
+	inline const T& Get() const { return Value; }
 
 	friend FArchive& operator <<(FArchive& Ar, TEvaluatorMetricParam& Param)
 	{
 		Ar << Param.Value;
+		Ar << Param.Name;
 		return Ar;
+	}
+
+	void WriteNameIntoString(FString& OutString, const FString& Delimiter = ",") const
+	{
+		OutString += Name + Delimiter;
 	}
 };
 
@@ -52,22 +68,36 @@ struct EVALUATOR_API TEvaluatorMetricClusterParam
 {
 private:
 	TArray<T> ValuesInClusters;
+	FString Name = "None";
 
 public:
-	TEvaluatorMetricClusterParam()
+	TEvaluatorMetricClusterParam() = delete;
+	TEvaluatorMetricClusterParam(const FString& InName) : Name(InName)
 	{
 		ValuesInClusters.AddDefaulted(FCrowdStatistics::MaxClusterType);
 	}
 	
 	inline T& GetInClusterChecked(int32 ClusterType) { return ValuesInClusters[ClusterType]; }
+	inline const T& GetInClusterChecked(int32 ClusterType) const { return ValuesInClusters[ClusterType]; }
 
 	friend FArchive& operator <<(FArchive& Ar, TEvaluatorMetricClusterParam& Param)
 	{
 		Ar << Param.ValuesInClusters;
+		Ar << Param.Name;
 		return Ar;
 	}
 
-	int32 GetClustersNum() { return ValuesInClusters.Num(); }
+	const FString& GetName() const { return Name; }
+	
+	void WriteNameIntoString(FString& OutString, const FString& Delimiter = ",") const
+	{
+		for (int i = 0; i < ValuesInClusters.Num(); i++)
+		{
+			OutString += Name + "Clust" + FString::FromInt(i) + Delimiter;
+		}
+	}
+
+	int32 GetClustersNum() const { return ValuesInClusters.Num(); }
 };
 
 template<typename T>
@@ -75,11 +105,14 @@ struct EVALUATOR_API TEvaluatorMetricArealParam
 {
 private:
 	TArray<T> ValuesInAreas;
+	FString Name = "None";
 
 public:
-	TEvaluatorMetricArealParam()
-	{
-	}
+	TEvaluatorMetricArealParam() = delete;
+	TEvaluatorMetricArealParam(const FString& InName) : Name(InName) {};
+
+	const T& GetValueChecked(int32 MapAreaId) const { return ValuesInAreas[MapAreaId]; };
+	T& GetValueMutable(int32 MapAreaId) { return ValuesInAreas[MapAreaId]; };
 	
 	T GetValue(int32 MapAreaId)
 	{
@@ -102,7 +135,18 @@ public:
 	friend FArchive& operator <<(FArchive& Ar, TEvaluatorMetricArealParam& Param)
 	{
 		Ar << Param.ValuesInAreas;
+		Ar << Param.Name;
 		return Ar;
+	}
+
+	const FString& GetName() const { return Name; }
+	
+	void WriteNameIntoString(FString& OutString, const FString& Delimiter = ",") const
+	{
+		for (int i = 0; i < ValuesInAreas.Num(); i++)
+		{
+			OutString += Name + "Area" + FString::FromInt(i) + Delimiter;
+		}
 	}
 
 	int32 GetAreasNum() const { return ValuesInAreas.Num(); }
@@ -114,6 +158,8 @@ public:
 template<typename T>
 struct EVALUATOR_API TEvaluatorMetaParam
 {
+	FString Name = "None";
+	
 	T Value;              // Currently used value
 	TValueRange<T> Range; // Range of possible values
 	T Step;               // How much this value is changed per one step (test session / param randomization call)
@@ -123,9 +169,12 @@ struct EVALUATOR_API TEvaluatorMetaParam
 
 	friend FArchive& operator <<(FArchive& Ar, TEvaluatorMetaParam& Param)
 	{
+		Ar << Param.Name;
 		Ar << Param.Value;
 		Ar << Param.Range;
 		Ar << Param.Step;
+		Ar << Param.bIncrementOnly;
+		Ar << Param.bIgnoreStep;
 		return Ar;
 	}
 
@@ -153,7 +202,7 @@ private:
 	TEvaluatorMetaParam<T> DefaultValue;
 
 public:
-	TEvaluatorMetaArealParam(TEvaluatorMetaParam<T> InDefaultValue)
+	TEvaluatorMetaArealParam(const TEvaluatorMetaParam<T>& InDefaultValue)
 	{
 		DefaultValue = InDefaultValue;
 	}
@@ -164,6 +213,14 @@ public:
 		return Ar;
 	}
 
+	void WriteNameIntoString(FString& OutString, const FString& Delimiter = ",") const
+	{
+		for (int i = 0; i < ParamsInAreas.Num(); i++)
+		{
+			OutString += ParamsInAreas[i].Name + "Area" + FString::FromInt(i) + Delimiter;
+		}
+	}
+
 	TArray<TEvaluatorMetaParam<T>>& Get() 
 	{
 		return ParamsInAreas;
@@ -172,8 +229,9 @@ public:
 	{
 		return ParamsInAreas;
 	}
-	
-	T GetValue(int32 MapAreaId)
+
+	const T& GetValueChecked(int32 MapAreaId) const { return ParamsInAreas[MapAreaId].Value; };
+	T GetValue(int32 MapAreaId) const
 	{
 		if (!ParamsInAreas.IsValidIndex(MapAreaId))
 		{
@@ -187,7 +245,7 @@ public:
 		ParamsInAreas.Add(DefaultValue);
 	}
 
-	int32 GetAreasNum() { return ParamsInAreas.Num(); }
+	const int32 GetAreasNum() const { return ParamsInAreas.Num(); }
 
 	void TryExpandToAreasNum(const int32 AreasNum)
 	{
@@ -211,28 +269,25 @@ public:
 struct EVALUATOR_API FEvaluatorMetaParamsContainer
 {
 	int32 TestsNum = 0;	// How many times this MetaParamsContainer has been used in tests (in future it will help to define how to change these params for the next test)
-	TEvaluatorMetaParam<int32> DetourMaxAdditionalCost{35, {10, 70}, 0};	// Max additional costs from detour
-	TEvaluatorMetaParam<int32> AgentsNum{4000, {20, 5000}, 0};
-	TEvaluatorMetaParam<float> DecrementCollisionsCountRate{0.5f, {0.3f, 0.9f}, 0.0f};
-	TEvaluatorMetaArealParam<float> AgentMovementSpeedAreal{{50.f, {40.f, 80.f}, 0.f}};
-	TEvaluatorMetaArealParam<float> AvoidanceStrengthAreal{{0.5f, {0.f, 2.f}, 0.5f, false, false}};
-	TEvaluatorMetaArealParam<float> AvoidanceRadiusAreal{{100.f, {0.f, 200.f}, 20.f}};
-	TEvaluatorMetaArealParam<float> ToTheSideAvoidanceDurationAreal{{2.f, {0.f, 5.f}, 2.f}};
-	TEvaluatorMetaParam<float> DefaultToTheSideAvoidanceDuration{2.f, {0.f, 5.f}, 2.f};
+	TEvaluatorMetaParam<int32> DetourMaxAdditionalCost{"MaxDetourCost", 15, {5, 60}, 15, false, false};	// Max additional costs from detour
+	TEvaluatorMetaParam<int32> AgentsNum{"AgentsNum", 4000, {20, 5000}, 0};
+	TEvaluatorMetaParam<float> DecrementCollisionsCountRate{"DecColCountRate", 0.5f, {0.3f, 0.9f}, 0.0f};
+	TEvaluatorMetaArealParam<float> AgentMovementSpeedAreal{{"Speed", 50.f, {40.f, 80.f}, 0.f}};
+	TEvaluatorMetaArealParam<float> AvoidanceStrengthAreal{{"AvoStr", 1.f, {0.f, 2.f}, 0.0f, false, false}};
+	TEvaluatorMetaArealParam<float> AvoidanceRadiusAreal{{"AvoRad", 120.f, {0.f, 200.f}, 30.f, false, false}};
+	TEvaluatorMetaArealParam<float> ToTheSideAvoidanceDurationAreal{{"SideAvoDur", 4.f, {0.f, 5.f}, 0.f, false, false}};
+	TEvaluatorMetaParam<float> DefaultToTheSideAvoidanceDuration{"SideAvoDur", 4.f, {0.f, 5.f}, 0.f, false, false};
+	TEvaluatorMetaParam<int32> AvoidanceType{"AvoidanceType", 1, {0, 2}, 1, false, true};	// Avoidance algorithms switcher. Currently, for all areas at once.
 	
-	TEvaluatorMetaParam<float> AgentMovementSpeedSpaciousCluster{50.f, {40.f, 80.f}, 0.f};
-	TEvaluatorMetaParam<float> AgentMovementSpeedDenseCluster{50.f, {40.f, 80.f}, 0.f};
-	TEvaluatorMetaParam<float> AvoidanceStrengthSpaciousCluster{0.5f, {0.f, 2.f}, 0.5f, false, false};
-	TEvaluatorMetaParam<float> AvoidanceStrengthDenseCluster{0.f, {0.f, 5.f}, 0.f, false, true};
-	TEvaluatorMetaParam<float> AvoidanceRadiusSpaciousCluster{100.f, {0.f, 200.f}, 20.f};
-	TEvaluatorMetaParam<float> AvoidanceRadiusDenseCluster{120.f, {0.f, 200.f}, 20.f};
+	TEvaluatorMetaParam<float> AgentMovementSpeedSpaciousCluster{"SpeedClustSpac", 50.f, {40.f, 80.f}, 0.f};
+	TEvaluatorMetaParam<float> AgentMovementSpeedDenseCluster{"SpeedClustDense", 50.f, {40.f, 80.f}, 0.f};
+	TEvaluatorMetaParam<float> AvoidanceStrengthSpaciousCluster{"AvoStrClustSpac", 1.f, {0.f, 2.f}, 0.f, false, false};
+	TEvaluatorMetaParam<float> AvoidanceStrengthDenseCluster{"AvoStrClustDense", 0.8f, {0.f, 5.f}, 0.f, false, false};
+	TEvaluatorMetaParam<float> AvoidanceRadiusSpaciousCluster{"AvoRadClustSpac", 120.f, {0.f, 200.f}, 0.f, false, false};
+	TEvaluatorMetaParam<float> AvoidanceRadiusDenseCluster{"AvoRadClustDense", 120.f, {0.f, 200.f}, 0.f, false, false};
 
-	TEvaluatorMetaParam<float> UserParam01{1.f, {1.f, 1.f}, 0.f};	// User params one may use to avoid incompatibility with old save files
-	TEvaluatorMetaParam<float> UserParam02{1.f, {1.f, 1.f}, 0.f};
-	TEvaluatorMetaParam<float> UserParam03{1.f, {1.f, 1.f}, 0.f};
-	TEvaluatorMetaParam<float> UserParam04{1.f, {1.f, 1.f}, 0.f};
-	TEvaluatorMetaParam<float> UserParam05{1.f, {1.f, 1.f}, 0.f};
-	TEvaluatorMetaParam<float> UserParam06{1.f, {1.f, 1.f}, 0.f};
+	TEvaluatorMetaParam<float> UserParam01{"UserParam01", 1.f, {1.f, 1.f}, 0.f};	// User params one may use to avoid incompatibility with old save files
+	TEvaluatorMetaParam<float> UserParam02{"UserParam02", 1.f, {1.f, 1.f}, 0.f};
 
 	friend FArchive& operator <<(FArchive& Ar, FEvaluatorMetaParamsContainer& Container)
 	{
@@ -246,6 +301,7 @@ struct EVALUATOR_API FEvaluatorMetaParamsContainer
 		Ar << Container.AvoidanceRadiusAreal;
 		Ar << Container.ToTheSideAvoidanceDurationAreal;
 		Ar << Container.DefaultToTheSideAvoidanceDuration;
+		Ar << Container.AvoidanceType;
 		
 		Ar << Container.AgentMovementSpeedSpaciousCluster;
 		Ar << Container.AgentMovementSpeedDenseCluster;
@@ -256,10 +312,6 @@ struct EVALUATOR_API FEvaluatorMetaParamsContainer
 		
 		Ar << Container.UserParam01;
 		Ar << Container.UserParam02;
-		Ar << Container.UserParam03;
-		Ar << Container.UserParam04;
-		Ar << Container.UserParam05;
-		Ar << Container.UserParam06;
 		return Ar;
 	}
 
@@ -281,6 +333,7 @@ struct EVALUATOR_API FEvaluatorMetaParamsContainer
 		AvoidanceRadiusAreal.Randomize();
 		ToTheSideAvoidanceDurationAreal.Randomize();
 		DefaultToTheSideAvoidanceDuration.Randomize();
+		AvoidanceType.Randomize();
 		
 		AgentMovementSpeedSpaciousCluster.Randomize();
 		AgentMovementSpeedDenseCluster.Randomize();
@@ -291,49 +344,146 @@ struct EVALUATOR_API FEvaluatorMetaParamsContainer
 		
 		UserParam01.Randomize();
 		UserParam02.Randomize();
-		UserParam03.Randomize();
-		UserParam04.Randomize();
-		UserParam05.Randomize();
-		UserParam06.Randomize();
+	}
+
+	void WriteParamsNamesIntoString(FString& OutString) const
+	{
+		OutString += DetourMaxAdditionalCost.Name + ",";
+		OutString += AgentsNum.Name + ",";
+		OutString += DecrementCollisionsCountRate.Name + ",";
+		
+		AgentMovementSpeedAreal.WriteNameIntoString(OutString);
+		AvoidanceStrengthAreal.WriteNameIntoString(OutString);
+		AvoidanceRadiusAreal.WriteNameIntoString(OutString);
+		ToTheSideAvoidanceDurationAreal.WriteNameIntoString(OutString);
+		OutString += DefaultToTheSideAvoidanceDuration.Name + ",";
+		OutString += AvoidanceType.Name + ",";
+		
+		OutString += AgentMovementSpeedSpaciousCluster.Name + ",";
+		OutString += AgentMovementSpeedDenseCluster.Name + ",";
+		OutString += AvoidanceStrengthSpaciousCluster.Name + ",";
+		OutString += AvoidanceStrengthDenseCluster.Name + ",";
+		OutString += AvoidanceRadiusSpaciousCluster.Name + ",";
+		OutString += AvoidanceRadiusDenseCluster.Name;
+		OutString += "\n";
+	}
+
+	void WriteParamsValuesIntoString(FString& OutString) const
+	{
+		OutString += FString::FromInt(DetourMaxAdditionalCost.Value) + ",";
+		OutString += FString::FromInt(AgentsNum.Value) + ",";
+		OutString += FString::SanitizeFloat(DecrementCollisionsCountRate.Value) + ",";
+
+		for (int32 i = 0; i < AgentMovementSpeedAreal.GetAreasNum(); i++)
+		{
+			OutString += FString::SanitizeFloat(AgentMovementSpeedAreal.GetValueChecked(i)) + ",";
+		}
+		for (int32 i = 0; i < AvoidanceStrengthAreal.GetAreasNum(); i++)
+		{
+			OutString += FString::SanitizeFloat(AvoidanceStrengthAreal.GetValueChecked(i)) + ",";
+		}
+		for (int32 i = 0; i < AvoidanceRadiusAreal.GetAreasNum(); i++)
+		{
+			OutString += FString::SanitizeFloat(AvoidanceRadiusAreal.GetValueChecked(i)) + ",";
+		}
+		for (int32 i = 0; i < ToTheSideAvoidanceDurationAreal.GetAreasNum(); i++)
+		{
+			OutString += FString::SanitizeFloat(ToTheSideAvoidanceDurationAreal.GetValueChecked(i)) + ",";
+		}
+		OutString += FString::SanitizeFloat(DefaultToTheSideAvoidanceDuration.Value) + ",";
+		OutString += FString::FromInt(AvoidanceType.Value) + ",";
+		
+		OutString += FString::SanitizeFloat(AgentMovementSpeedSpaciousCluster.Value) + ",";
+		OutString += FString::SanitizeFloat(AgentMovementSpeedDenseCluster.Value) + ",";
+		OutString += FString::SanitizeFloat(AvoidanceStrengthSpaciousCluster.Value) + ",";
+		OutString += FString::SanitizeFloat(AvoidanceStrengthDenseCluster.Value) + ",";
+		OutString += FString::SanitizeFloat(AvoidanceRadiusSpaciousCluster.Value) + ",";
+		OutString += FString::SanitizeFloat(AvoidanceRadiusDenseCluster.Value);
+		OutString += "\n";
 	}
 };
 
 struct EVALUATOR_API FEvaluatorMetricParamsContainer
 {
-	TEvaluatorMetricParam<float> TestDuration;
-	TEvaluatorMetricParam<FAggregatedValueFloat> AggregatedTickTime;	// Used to calculate average delta time
-	TEvaluatorMetricParam<FAggregatedValueFloat> AggregatedEntitiesMovementSpeed;	// Used to calculate average entities movement speed
-	TEvaluatorMetricClusterParam<FAggregatedValueFloat> AggregatedEntitiesMovementSpeedInClusters;
-	TEvaluatorMetricArealParam<FAggregatedValueFloat> AggregatedEntitiesMovementSpeedAreal;	// Used to calculate average entities movement speed
-	TEvaluatorMetricClusterParam<int64> CollisionsCountInClusters;
-	TEvaluatorMetricArealParam<int64> CollisionsCountAreal;
-	TEvaluatorMetricParam<float> AverageEntityFinishedTime;
+	TEvaluatorMetricParam<float> TestDuration{"TestDuration"};
+	TEvaluatorMetricParam<FAggregatedValueFloat> AggregatedTickTime{"AvgTickTime"};	// Used to calculate average delta time
+	TEvaluatorMetricParam<FAggregatedValueFloat> AggregatedMassProcExecutionTime{"AvgMassProcTime"};	// Used to calculate average execution time of all mass processors during one tick
+	TEvaluatorMetricParam<FAggregatedValueFloat> AggregatedEntitiesMovementSpeed{"AvgSpeed"};	// Used to calculate average entities movement speed
+	TEvaluatorMetricClusterParam<FAggregatedValueFloat> AggregatedEntitiesMovementSpeedInClusters{"AvgSpeed"};
+	TEvaluatorMetricArealParam<FAggregatedValueFloat> AggregatedEntitiesMovementSpeedAreal{"AvgSpeed"};	// Used to calculate average entities movement speed
+	TEvaluatorMetricClusterParam<int64> CollisionsCountInClusters{"CollisCount"};
+	TEvaluatorMetricArealParam<int64> CollisionsCountAreal{"CollisCount"};
+	TEvaluatorMetricArealParam<float> AverageEntityTimeInAreas{"AvgTimeIn"};
+	TEvaluatorMetricParam<float> AverageEntityFinishedTime{"AvgFinishTime"};
 
-	TEvaluatorMetricParam<float> UserParam01;	// User params one may use to avoid incompatibility with old save files
-	TEvaluatorMetricParam<float> UserParam02;
-	TEvaluatorMetricParam<float> UserParam03;
-	TEvaluatorMetricParam<float> UserParam04;
-	TEvaluatorMetricParam<float> UserParam05;
-	TEvaluatorMetricParam<float> UserParam06;
+	TEvaluatorMetricParam<float> UserParam01{"UserParam01"};	// User params one may use to avoid incompatibility with old save files
+	TEvaluatorMetricParam<float> UserParam02{"UserParam02"};
 
 	friend FArchive& operator <<(FArchive& Ar, FEvaluatorMetricParamsContainer& Container)
 	{
-		Ar << Container.AggregatedTickTime;
 		Ar << Container.TestDuration;
-		Ar << Container.AggregatedEntitiesMovementSpeed;
-		Ar << Container.AggregatedEntitiesMovementSpeedAreal;
+		Ar << Container.AggregatedTickTime;
+		Ar << Container.AggregatedTickTime;
+		Ar << Container.AggregatedMassProcExecutionTime;
 		Ar << Container.AggregatedEntitiesMovementSpeedInClusters;
-		Ar << Container.CollisionsCountAreal;
+		Ar << Container.AggregatedEntitiesMovementSpeedAreal;
 		Ar << Container.CollisionsCountInClusters;
+		Ar << Container.CollisionsCountAreal;
+		Ar << Container.AverageEntityTimeInAreas;
 		Ar << Container.AverageEntityFinishedTime;
 
 		Ar << Container.UserParam01;
 		Ar << Container.UserParam02;
-		Ar << Container.UserParam03;
-		Ar << Container.UserParam04;
-		Ar << Container.UserParam05;
-		Ar << Container.UserParam06;
 		return Ar;
+	}
+
+	void WriteParamsNamesIntoString(FString& OutString) const
+	{
+		TestDuration.WriteNameIntoString(OutString);
+		AggregatedTickTime.WriteNameIntoString(OutString);
+		AggregatedMassProcExecutionTime.WriteNameIntoString(OutString);
+		AggregatedEntitiesMovementSpeed.WriteNameIntoString(OutString);
+		AggregatedEntitiesMovementSpeedInClusters.WriteNameIntoString(OutString);
+		AggregatedEntitiesMovementSpeedAreal.WriteNameIntoString(OutString);
+		CollisionsCountInClusters.WriteNameIntoString(OutString);
+		CollisionsCountAreal.WriteNameIntoString(OutString);
+		AverageEntityTimeInAreas.WriteNameIntoString(OutString);
+		AverageEntityFinishedTime.WriteNameIntoString(OutString, "");
+		OutString += "\n";
+	}
+
+	void WriteParamsValuesIntoString(FString& OutString) const
+	{
+		OutString += FString::SanitizeFloat(TestDuration.Get()) + ",";
+		OutString += FString::SanitizeFloat(AggregatedTickTime.Get().GetMean()) + ",";
+		OutString += FString::SanitizeFloat(AggregatedMassProcExecutionTime.Get().GetMean()) + ",";
+		OutString += FString::SanitizeFloat(AggregatedEntitiesMovementSpeed.Get().GetMean()) + ",";
+		
+		for (int32 i = 0; i < AggregatedEntitiesMovementSpeedInClusters.GetClustersNum(); i++)
+		{
+			OutString += FString::SanitizeFloat(AggregatedEntitiesMovementSpeedInClusters.GetInClusterChecked(i).GetMean()) + ",";
+		}
+		for (int32 i = 0; i < AggregatedEntitiesMovementSpeedAreal.GetAreasNum(); i++)
+		{
+			OutString += FString::SanitizeFloat(AggregatedEntitiesMovementSpeedAreal.GetValueChecked(i).GetMean()) + ",";
+		}
+		
+		for (int32 i = 0; i < CollisionsCountInClusters.GetClustersNum(); i++)
+		{
+			OutString += FString::SanitizeFloat(CollisionsCountInClusters.GetInClusterChecked(i)) + ",";
+		}
+		for (int32 i = 0; i < CollisionsCountAreal.GetAreasNum(); i++)
+		{
+			OutString += FString::SanitizeFloat(CollisionsCountAreal.GetValueChecked(i)) + ",";
+		}
+		for (int32 i = 0; i < AverageEntityTimeInAreas.GetAreasNum(); i++)
+		{
+			OutString += FString::SanitizeFloat(AverageEntityTimeInAreas.GetValueChecked(i)) + ",";
+		}
+
+		OutString += FString::SanitizeFloat(AverageEntityFinishedTime.Get());
+
+		OutString += "\n";
 	}
 };
 

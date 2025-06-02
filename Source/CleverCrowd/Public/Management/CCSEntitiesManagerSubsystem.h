@@ -31,6 +31,7 @@ public:
 	
 	TArray<float> ToTheSideAvoidanceDurationInAreas;
 	float DefaultToTheSideAvoidanceDuration;
+	int32 AvoidanceType;
 
 private:
 	UPROPERTY()

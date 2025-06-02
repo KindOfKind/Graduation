@@ -8,6 +8,7 @@ public class CleverCrowdSimEditorTarget : TargetRules
 	public CleverCrowdSimEditorTarget( TargetInfo Target) : base(Target)
 	{
 		Type = TargetType.Editor;
+		ExtraModuleNames.AddRange( new string[] { "ORCA" } );
 		ExtraModuleNames.AddRange( new string[] { "Evaluator" } );
 		ExtraModuleNames.AddRange( new string[] { "CCSUtils" } );
 		ExtraModuleNames.AddRange( new string[] { "CleverCrowdNavigator" } );

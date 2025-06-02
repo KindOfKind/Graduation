@@ -8,6 +8,7 @@
 #include "MassExecutionContext.h"
 #include "MassMovementFragments.h"
 #include "MassNavigationUtils.h"
+#include "OrcaSolver.h"
 #include "Collisions/CollisionsFragments.h"
 #include "Common/Clusters/CrowdClusterTypes.h"
 #include "Global/CrowdStatisticsSubsystem.h"
@@ -50,7 +51,16 @@ void URVOProcessor::Execute(FMassEntityManager& EntityManager, FMassExecutionCon
 	float CurrentTime = GetWorld()->GetTimeSeconds();
 	float DeltaTime = GetWorld()->DeltaTimeSeconds;
 
+	const bool bUseToTheSideAvoidance = (EntitiesManagerSubsystem->AvoidanceType == 0);
+	const bool bUseSimpleAvoidance    = (EntitiesManagerSubsystem->AvoidanceType == 1);
+	const bool bUseORCA               = (EntitiesManagerSubsystem->AvoidanceType == 2);
+	
+	if (bUseORCA && !IsValid(OrcaSolver))
+	{
+		InitializeOrcaSolver();
+	}
 
+	// Update ORCA data and do To-The-Side-Avoidance
 	EntityQuery.ForEachEntityChunk(EntityManager, Context, [&, this](FMassExecutionContext& Context)
 	{
 		const int32 NumEntities                            = Context.GetNumEntities();
@@ -66,77 +76,122 @@ void URVOProcessor::Execute(FMassEntityManager& EntityManager, FMassExecutionCon
 			FMassForceFragment& ForceFragment     = ForceList[EntityIndex];
 			FClusterFragment& ClusterFragment     = ClusterList[EntityIndex];
 
-			float ToTheSideAvoidanceDuration = EntitiesManagerSubsystem->DefaultToTheSideAvoidanceDuration;
-			if (ClusterFragment.AreaId > INDEX_NONE)
+			if (bUseORCA)
 			{
-				ToTheSideAvoidanceDuration = EntitiesManagerSubsystem->ToTheSideAvoidanceDurationInAreas[ClusterFragment.AreaId];
+				if (!bInitializedOrcaAgents)
+				{
+					CollisionFragment.OrcaIndex = OrcaSolver->AddAgent(TransformFragment.GetTransform().GetLocation());
+				}
+				else
+				{
+					OrcaSolver->SetAgentLocation(CollisionFragment.OrcaIndex, TransformFragment.GetTransform().GetLocation());
+				}
+				OrcaSolver->SetPreferredVelocity(CollisionFragment.OrcaIndex, ForceFragment.Value.GetSafeNormal());
 			}
 
-			if (ToTheSideAvoidanceDuration <= 0.05f)
+			if (bUseToTheSideAvoidance)
 			{
-				DoToTheSideAvoidance(CollisionFragment, ForceFragment.Value, TransformFragment.GetMutableTransform(), Context, ToTheSideAvoidanceDuration, DeltaTime);
+				float ToTheSideAvoidanceDuration = EntitiesManagerSubsystem->DefaultToTheSideAvoidanceDuration;
+				if (ClusterFragment.AreaId > INDEX_NONE)
+				{
+					ToTheSideAvoidanceDuration = EntitiesManagerSubsystem->ToTheSideAvoidanceDurationInAreas[ClusterFragment.AreaId];
+				}
+
+				if (ToTheSideAvoidanceDuration >= 0.05f)
+				{
+					DoToTheSideAvoidance(CollisionFragment, ForceFragment.Value, TransformFragment.GetMutableTransform(), Context, ToTheSideAvoidanceDuration, DeltaTime);
+				}
 			}
 		}
 	});
-	
 
-	EntitiesHashGrid->ParallelForEachNonEmptyCell([&, this](const FGridCellPosition& Cell)
+	// Update agents locations with Orca solver
+	if (bUseORCA)
 	{
-		TArray<FMassEntityHandle> Entities;
-		FGridBounds Bounds{Cell, Cell + FGridCellPosition{ClusterSize - 1, ClusterSize - 1}};
-		EntitiesHashGrid->GetEntitiesInBounds(Entities, Bounds);	// Getting entities from 4 adjacent grid cells
+		OrcaSolver->SetTimeStep(DeltaTime);
+		OrcaSolver->DoStep();
 		
-		const int32 EntitiesNum = Entities.Num();
-		for (int32 EntityIndex = 0; EntityIndex < EntitiesNum; ++EntityIndex)
+		EntityQuery.ForEachEntityChunk(EntityManager, Context, [&, this](FMassExecutionContext& Context)
 		{
-			FTransform& Transform                 = EntityManager.GetFragmentDataChecked<FTransformFragment>(Entities[EntityIndex]).GetMutableTransform();
-			const float Radius                    = EntityManager.GetFragmentDataChecked<FAgentRadiusFragment>(Entities[EntityIndex]).Radius;
-			FVector& Force                        = EntityManager.GetFragmentDataChecked<FMassForceFragment>(Entities[EntityIndex]).Value;
-			FCollisionFragment& CollisionFragment = EntityManager.GetFragmentDataChecked<FCollisionFragment>(Entities[EntityIndex]);
-			FClusterFragment& ClusterFragment     = EntityManager.GetFragmentDataChecked<FClusterFragment>(Entities[EntityIndex]);
-			const FVector& Location               = Transform.GetLocation();
-			FVector Location2D                    = FVector{Location.X, Location.Y, 0.f};
+			const int32 NumEntities                            = Context.GetNumEntities();
+			const TArrayView<FTransformFragment> TransformList = Context.GetMutableFragmentView<FTransformFragment>();
+			const TArrayView<FCollisionFragment> CollisionList = Context.GetMutableFragmentView<FCollisionFragment>();
 
-			float AvoidanceRadius   = EntitiesManagerSubsystem->AvoidanceRadiusInClusters[ClusterFragment.ClusterType];
-			float AvoidanceStrength = EntitiesManagerSubsystem->AvoidanceStrengthInClusters[ClusterFragment.ClusterType];
-			if (ClusterFragment.AreaId > INDEX_NONE)
+			for (int32 EntityIndex = 0; EntityIndex < NumEntities; ++EntityIndex)
 			{
-				AvoidanceRadius   = EntitiesManagerSubsystem->AvoidanceRadiusInAreas[ClusterFragment.AreaId];
-				AvoidanceStrength = EntitiesManagerSubsystem->AvoidanceStrengthInAreas[ClusterFragment.AreaId];
+				FTransformFragment& TransformFragment = TransformList[EntityIndex];
+				FCollisionFragment& CollisionFragment = CollisionList[EntityIndex];
+
+				const FVector& OldLocation = TransformFragment.GetMutableTransform().GetLocation();
+				FVector NewLocation        = OrcaSolver->GetAgentLocation(CollisionFragment.OrcaIndex);
+				TransformFragment.GetMutableTransform().SetLocation(FVector{NewLocation.X, NewLocation.Y, OldLocation.Z});
 			}
+		});
+	}
 
-			if (AvoidanceRadius <= 0.f || AvoidanceStrength <= 0.f)
+	bInitializedOrcaAgents = true;
+
+	// Simple custom avoidance
+	if (bUseSimpleAvoidance)
+	{
+		EntitiesHashGrid->ParallelForEachNonEmptyCell([&, this](const FGridCellPosition& Cell)
+		{
+			TArray<FMassEntityHandle> Entities;
+			FGridBounds Bounds{Cell, Cell + FGridCellPosition{ClusterSize - 1, ClusterSize - 1}};
+			EntitiesHashGrid->GetEntitiesInBounds(Entities, Bounds); // Getting entities from 4 adjacent grid cells
+
+			const int32 EntitiesNum = Entities.Num();
+			for (int32 EntityIndex = 0; EntityIndex < EntitiesNum; ++EntityIndex)
 			{
-				continue;
-			}
+				FTransform& Transform                 = EntityManager.GetFragmentDataChecked<FTransformFragment>(Entities[EntityIndex]).GetMutableTransform();
+				const float Radius                    = EntityManager.GetFragmentDataChecked<FAgentRadiusFragment>(Entities[EntityIndex]).Radius;
+				FVector& Force                        = EntityManager.GetFragmentDataChecked<FMassForceFragment>(Entities[EntityIndex]).Value;
+				FCollisionFragment& CollisionFragment = EntityManager.GetFragmentDataChecked<FCollisionFragment>(Entities[EntityIndex]);
+				FClusterFragment& ClusterFragment     = EntityManager.GetFragmentDataChecked<FClusterFragment>(Entities[EntityIndex]);
+				const FVector& Location               = Transform.GetLocation();
+				FVector Location2D                    = FVector{Location.X, Location.Y, 0.f};
 
-			FEntityProxyData EntityData {
-				Transform, Location2D, Radius, Force, CollisionFragment, ClusterFragment
-			};
+				float AvoidanceRadius   = EntitiesManagerSubsystem->AvoidanceRadiusInClusters[ClusterFragment.ClusterType];
+				float AvoidanceStrength = EntitiesManagerSubsystem->AvoidanceStrengthInClusters[ClusterFragment.ClusterType];
+				if (ClusterFragment.AreaId > INDEX_NONE)
+				{
+					AvoidanceRadius   = EntitiesManagerSubsystem->AvoidanceRadiusInAreas[ClusterFragment.AreaId];
+					AvoidanceStrength = EntitiesManagerSubsystem->AvoidanceStrengthInAreas[ClusterFragment.AreaId];
+				}
 
-			for (int32 OtherEntityIndex = 0; OtherEntityIndex < EntitiesNum; ++OtherEntityIndex)
-			{
-				if (Entities[EntityIndex] == Entities[OtherEntityIndex])
+				if (AvoidanceRadius <= 1.f || AvoidanceStrength <= 0.01f)
 				{
 					continue;
 				}
-				
-				FTransform& OtherTransform = EntityManager.GetFragmentDataChecked<FTransformFragment>(Entities[OtherEntityIndex]).GetMutableTransform();
-				const float OtherRadius = EntityManager.GetFragmentDataChecked<FAgentRadiusFragment>(Entities[OtherEntityIndex]).Radius;
-				FVector& OtherForce = EntityManager.GetFragmentDataChecked<FMassForceFragment>(Entities[OtherEntityIndex]).Value;
-				FCollisionFragment& OtherCollisionFragment = EntityManager.GetFragmentDataChecked<FCollisionFragment>(Entities[OtherEntityIndex]);
-				FClusterFragment& OtherClusterFragment = EntityManager.GetFragmentDataChecked<FClusterFragment>(Entities[OtherEntityIndex]);
-				const FVector& OtherLocation = OtherTransform.GetLocation();
-				FVector OtherLocation2D = FVector{OtherLocation.X, OtherLocation.Y, 0.f};
 
-				FEntityProxyData OtherEntityData {
-					OtherTransform, OtherLocation2D, OtherRadius, OtherForce, OtherCollisionFragment, OtherClusterFragment
+				FEntityProxyData EntityData{
+					Transform, Location2D, Radius, Force, CollisionFragment, ClusterFragment
 				};
-				
-				DoSimpleAvoidance(EntityData, OtherEntityData, AvoidanceRadius, AvoidanceStrength, DeltaTime);
+
+				for (int32 OtherEntityIndex = 0; OtherEntityIndex < EntitiesNum; ++OtherEntityIndex)
+				{
+					if (Entities[EntityIndex] == Entities[OtherEntityIndex])
+					{
+						continue;
+					}
+
+					FTransform& OtherTransform = EntityManager.GetFragmentDataChecked<FTransformFragment>(Entities[OtherEntityIndex]).GetMutableTransform();
+					const float OtherRadius = EntityManager.GetFragmentDataChecked<FAgentRadiusFragment>(Entities[OtherEntityIndex]).Radius;
+					FVector& OtherForce = EntityManager.GetFragmentDataChecked<FMassForceFragment>(Entities[OtherEntityIndex]).Value;
+					FCollisionFragment& OtherCollisionFragment = EntityManager.GetFragmentDataChecked<FCollisionFragment>(Entities[OtherEntityIndex]);
+					FClusterFragment& OtherClusterFragment = EntityManager.GetFragmentDataChecked<FClusterFragment>(Entities[OtherEntityIndex]);
+					const FVector& OtherLocation = OtherTransform.GetLocation();
+					FVector OtherLocation2D = FVector{OtherLocation.X, OtherLocation.Y, 0.f};
+
+					FEntityProxyData OtherEntityData{
+						OtherTransform, OtherLocation2D, OtherRadius, OtherForce, OtherCollisionFragment, OtherClusterFragment
+					};
+
+					DoSimpleAvoidance(EntityData, OtherEntityData, AvoidanceRadius, AvoidanceStrength, DeltaTime);
+				}
 			}
-		}
-	});
+		});
+	}
 }
 
 void URVOProcessor::DoSimpleAvoidance(FEntityProxyData& EntityData, FEntityProxyData& OtherEntityData, float AvoidanceRadius, float AvoidanceStrength, float DeltaTime)
@@ -199,9 +254,17 @@ void URVOProcessor::DoToTheSideAvoidance(FCollisionFragment& CollisionFragment, 
 	//DrawDebugLine(Context.GetWorld(), Transform.GetLocation(), Transform.GetLocation() + FVector::UpVector * 1000.f, FColor::Yellow, false, 2.f, 0, 10.f);
 }
 
+void URVOProcessor::InitializeOrcaSolver()
+{
+	const FOrcaDefaultAgentParams AgentDefaults;
+	
+	OrcaSolver = NewObject<UOrcaSolver>();
+	OrcaSolver->Initialize(AgentDefaults);
+}
+
 
 // ToDo: implement
-void URVOProcessor::DoORCA(FEntityProxyData& EntityData, TArray<FEntityProxyData>& OtherEntityDatas, float AvoidanceRadius, float AvoidanceStrength, float DeltaTime)
+void URVOProcessor::DoMassORCA(FEntityProxyData& EntityData, TArray<FEntityProxyData>& OtherEntityDatas, float AvoidanceRadius, float AvoidanceStrength, float DeltaTime)
 {
 	// const FVector DesAcc = UE::MassNavigation::ClampVector(SteeringForce, MaxSteerAccel);
 	// const FVector DesVel = UE::MassNavigation::ClampVector(AgentVelocity + DesAcc * DeltaTime, MaximumSpeed);

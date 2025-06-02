@@ -17,10 +17,17 @@ class CLEVERCROWDSIM_API ACCSPlayerController : public APlayerController
 public:
 	UFUNCTION(Exec)
 	void CCS_ClearSavedData(int32 Mode = -1);
+	UFUNCTION(Exec)
+	void CCS_ClearMetaAndMetricsSaves(int32 Mode = -1);
 
 	UFUNCTION(Exec)
 	void CCS_SaveMapAreasData();
+	UFUNCTION(Exec)
+	void CCS_SaveEvaluationData();
 	
 	UFUNCTION(BlueprintCallable, Category = "Debug")
 	void DebugDrawCrowdGroupAreasAveraged();
+
+private:
+	void ClearSaves(bool bClearParams, bool bClearMapAreas, int32 Mode = -1);
 };

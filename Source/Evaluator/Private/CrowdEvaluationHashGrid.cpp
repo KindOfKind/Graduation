@@ -62,6 +62,8 @@ void ACrowdEvaluationHashGrid::MakeCrowdGroupAreasSnapshot()
 			{
 				break;
 			}
+			
+			Snapshot.Bounds.Expand(1);
 			const bool bMergedWithOtherBounds = AssignGroupTypeAndTryMerge(Snapshot);
 			
 			break;
@@ -167,7 +169,7 @@ bool ACrowdEvaluationHashGrid::AssignGroupTypeAndTryMerge(FCrowdGroupAreaSnapsho
 void ACrowdEvaluationHashGrid::SearchIntersectingGroupsOnSnapshots(int32& OutMaxIntersectingGroupId, int32& OutMaxIntersectionArea, FCrowdGroupAreaSnapshotsContainer*& OutSnapshotsContainer,
                                                                    FCrowdGroupAreaSnapshot& Snapshot, const int32 SnapshotsIndex, bool bMerge)
 {
-	constexpr int32 MinIntersectionArea = 30;
+	constexpr int32 MinIntersectionArea = 1;
 	OutMaxIntersectingGroupId = INDEX_NONE;
 	OutMaxIntersectionArea    = 0;
 	FGridBounds MaxIntersectedBounds;

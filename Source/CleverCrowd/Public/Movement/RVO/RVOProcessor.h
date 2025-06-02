@@ -6,6 +6,7 @@
 #include "MassProcessor.h"
 #include "RVOProcessor.generated.h"
 
+class UOrcaSolver;
 class UCCSCollisionsSubsystem;
 struct FClusterFragment;
 struct FCollisionFragment;
@@ -43,6 +44,9 @@ private:
 	UPROPERTY()
 	UCCSCollisionsSubsystem* CollisionsSubsystem;
 
+	UPROPERTY()
+	TObjectPtr<UOrcaSolver> OrcaSolver;
+	bool bInitializedOrcaAgents = false;
 	
 public:
 	
@@ -60,6 +64,8 @@ private:
 	void DoToTheSideAvoidance(FCollisionFragment& CollisionFragment, FVector& Force, FTransform& Transform, FMassExecutionContext& Context, float Duration, float DeltaTime);
 
 	// ORCA
-	void DoORCA(FEntityProxyData& EntityData, TArray<FEntityProxyData>& OtherEntityDatas, float AvoidanceRadius, float AvoidanceStrength, float DeltaTime);
+	void InitializeOrcaSolver();
+	
+	void DoMassORCA(FEntityProxyData& EntityData, TArray<FEntityProxyData>& OtherEntityDatas, float AvoidanceRadius, float AvoidanceStrength, float DeltaTime);
 	static FVector::FReal ComputeClosestPointOfApproach(const FVector RelPos, const FVector RelVel, const FVector::FReal TotalRadius, const FVector::FReal TimeHoriz);
 };

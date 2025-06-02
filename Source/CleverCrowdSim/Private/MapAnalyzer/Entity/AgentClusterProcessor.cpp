@@ -55,8 +55,9 @@ void UAgentClusterProcessor::Execute(FMassEntityManager& EntityManager, FMassExe
 
 			if (const FClusterCellData* ClusterData = ClustersHashGrid->GetClusterDataAtLocation(EntityLocation))
 			{
-				ClusterFragment.ClusterType = ClusterData->ClusterType;
-				ClusterFragment.AreaId      = EvaluationHashGrid->GetAreaIdAtLocation(EntityLocation);
+				ClusterFragment.ClusterType    = ClusterData->ClusterType;
+				ClusterFragment.PreviousAreaId = ClusterFragment.AreaId;
+				ClusterFragment.AreaId         = EvaluationHashGrid->GetAreaIdAtLocation(EntityLocation);
 			}
 		}
 	});

@@ -26,7 +26,7 @@ struct CLEVERCROWDSIM_API FMapAreaData
 	UPROPERTY()
 	float IslandsProximity = 0.f;
 
-	// Average number of corners in one island.
+	// Average number of corners in one island, normalized.
 	UPROPERTY()
 	float CornersCountInIsland = 0.f;
 	

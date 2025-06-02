@@ -7,6 +7,7 @@
 #include "GameEvaluatorSubsystem.h"
 #include "Clustering/KMeans.h"
 #include "Collisions/Obstacles/CCSObstaclesHashGrid.h"
+#include "Collisions/Obstacles/CCSSimpleObstacle.h"
 #include "Common/CommonTypes.h"
 #include "Global/CrowdNavigationSubsystem.h"
 #include "Grids/DebugBPFunctionLibrary.h"
@@ -39,11 +40,12 @@ void UMapAnalyzerSubsystem::DefineClustersOnMap()
 	TArray<FGridCellPosition> CellsWithObstacles;
 	UCCSObstaclesHashGrid* ObstaclesHashGrid = CollisionsSubsystem->GetObstaclesHashGrid();
 	check(ObstaclesHashGrid);
+	CellSizeCached = ObstaclesHashGrid->GetCellSize();
 	ObstaclesHashGrid->GetCellsWithObstacles(CellsWithObstacles);
 
 	// Convert CellPositions to Locations ---
 	TArray<FVector> PointsLocations;
-	UGridUtilsFunctionLibrary::ConvertCellPositionsToLocations(PointsLocations, CellsWithObstacles, ObstaclesHashGrid->GetCellSize());
+	UGridUtilsFunctionLibrary::ConvertCellPositionsToLocations(PointsLocations, CellsWithObstacles, CellSizeCached);
 
 	// Group locations into clusters ---
 	TArray<TArray<int32>> ClusteredPoints;	// [ClusterID][PointIndex]
@@ -107,7 +109,9 @@ void UMapAnalyzerSubsystem::DefineMapAreasOnMap()
 	UGameplayStatics::GetAllActorsOfClass(GetWorld(), AMapArea::StaticClass(), SpawnerActors);
 	for (int32 i = 0; i < SpawnerActors.Num(); i++)
 	{
-		DefineMapAreaInBounds(Cast<AMapArea>(SpawnerActors[i])->GetBounds());
+		AMapArea* MapArea = Cast<AMapArea>(SpawnerActors[i]);
+		CellSizeCached    = MapArea->CellSize;
+		DefineMapAreaInBounds(MapArea->GetBounds());
 	}
 
 	for (auto& [AreaId, OtherAreaData] : MapAreasDataConfig)
@@ -246,14 +250,15 @@ void UMapAnalyzerSubsystem::EvaluateMapAreaDataInBounds(FMapAreaData& OutAreaDat
 	OutAreaData.IslandsProximity = NormalizedAggregatedProximity.GetMean();
 
 	// (Average) CornersCountInIsland param ------
-	// ToDo: implement
-	CellsWithObstaclesTemp = CellsWithObstacles;
+	// We're unfair here: instead of counting corners, we count obstacle actors. Corners detection will be implemented in the future.
+	FVector BoundsCenter = UGridUtilsFunctionLibrary::GetGridCellLocationAtPosition(Bounds.GetCenterCell(), CellSizeCached);
+	FVector BoundsExtent = Bounds.GetExtent(CellSizeCached);
+	EObjectTypeQuery StaticObjectType = UEngineTypes::ConvertToObjectType(ECC_WorldStatic);
+	TArray<AActor*> ObstacleActors;
+	UKismetSystemLibrary::BoxOverlapActors(GetWorld(), BoundsCenter, BoundsExtent, TArray<TEnumAsByte<EObjectTypeQuery>>{StaticObjectType},
+	                                       ACCSSimpleObstacle::StaticClass(), TArray<AActor*>{}, ObstacleActors);
 
-	
-	// UGridUtilsFunctionLibrary::ForEachGridCell(Bounds, [this](const FGridCellPosition& CellPosition)
-	// {
-	// 	
-	// });
+	OutAreaData.CornersCountInIsland = FMath::Clamp(static_cast<float>(ObstacleActors.Num()) / 10, 0.f, 1.f);
 }
 
 

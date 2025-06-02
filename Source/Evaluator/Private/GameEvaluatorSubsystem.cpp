@@ -70,6 +70,9 @@ void UGameEvaluatorSubsystem::OnTick(float DeltaTime)
 	constexpr int32 ClustersNum = FCrowdStatistics::MaxClusterType;
 	
 	MetricParams.AggregatedTickTime.Get().AddValue(DeltaTime);
+	
+	MetricParams.AggregatedMassProcExecutionTime.Get().TotalValue = EntityManager->TotalProcessorsExecutionTime;
+	MetricParams.AggregatedMassProcExecutionTime.Get().ValuesAmount += 1;
 
 	FAggregatedValueFloat AggregatedSpeed;
 	for (int32 ClusterType = 0; ClusterType < ClustersNum; ClusterType++)
@@ -90,7 +93,7 @@ void UGameEvaluatorSubsystem::OnTick(float DeltaTime)
 		{
 			MetricParams.AggregatedEntitiesMovementSpeedAreal.SetValue(AreaType, FAggregatedValueFloat());
 		}
-		MetricParams.AggregatedEntitiesMovementSpeedAreal.GetValue(AreaType).AddValue(SpeedInArea);
+		MetricParams.AggregatedEntitiesMovementSpeedAreal.GetValueMutable(AreaType).AddValue(SpeedInArea);
 	}
 
 	if (World->GetTimeSeconds() > 600.f)
@@ -101,7 +104,7 @@ void UGameEvaluatorSubsystem::OnTick(float DeltaTime)
 
 void UGameEvaluatorSubsystem::OnUpdatedEntitiesCount(const int32 NewCount, const int32 OldCount)
 {
-	if (NewCount <= 0)
+	if (NewCount <= 10)
 	{
 		bPendingTestFinish = true;
 	}
@@ -128,6 +131,21 @@ void UGameEvaluatorSubsystem::SaveTestData()
 		AggregatedFinishTime.AddValue(EntityFinishTime);
 	}
 	MetricParams.AverageEntityFinishedTime.Get() = AggregatedFinishTime.GetMean();
+	
+	for (int32 AreaType = 0; AreaType <= MaxAreaTypeOnLevel; AreaType++)
+	{
+		float AverageTimeInArea = 0.f;
+		TMap<FMassEntityHandle, float>* EntitiesTotalTimeMap = CrowdStatisticsSubsystem->Stats.EntitiesTotalTimeInArea.Find(AreaType);
+		if (EntitiesTotalTimeMap)
+		{
+			int32 EntitiesInAreaNum = EntitiesTotalTimeMap->Num();
+			for (auto& [Entity, TotalTime] : *EntitiesTotalTimeMap)
+			{
+				AverageTimeInArea += (TotalTime / EntitiesInAreaNum);
+			}
+		}
+		MetricParams.AverageEntityTimeInAreas.SetValue(AreaType, AverageTimeInArea);
+	}
 	
 	EvaluatedMetricParams.Add(MetricParams);
 	EvaluatedMetaParams.Add(MetaParams);
@@ -164,7 +182,7 @@ ACrowdEvaluationHashGrid* UGameEvaluatorSubsystem::GetEvaluationHashGrid()
 
 bool UGameEvaluatorSubsystem::IsEvaluatingMapAreas() const
 {
-	return (TestIteration <= 1);
+	return (TestIteration <= 1 && !bLoadedMapAreasConfigs);
 }
 
 void UGameEvaluatorSubsystem::ResetEvaluationData()
@@ -282,37 +300,20 @@ FString UGameEvaluatorSubsystem::GetSaveFilePath() const
 
 bool UGameEvaluatorSubsystem::WriteEvaluationDataToFileAsText()
 {
+	if (EvaluatedMetaParams.IsEmpty() || EvaluatedMetricParams.IsEmpty())
+	{
+		return false;
+	}
+	
+	// Write metric params ------
 	FString Str;
-	int32 Num = 0;
-	FString MetricsHeaderStr = "TestDuration,AvgTickTime,AvgSpeed,AvgSpeedSpacClust,AvgSpeedDenseClust,CollisionsSpacClust,CollisionsDenseClust,AvgEntityFinishTime\n";
-	Str += MetricsHeaderStr;
-	Num = EvaluatedMetricParams.Num();
+	EvaluatedMetricParams[0].WriteParamsNamesIntoString(Str);	// We consider that the header will match metrics from all tests on the current map
+	
+	int32 Num = EvaluatedMetricParams.Num();
 	for (int32 i = 0; i < Num; i++)
 	{
-		Str += FString::SanitizeFloat(EvaluatedMetricParams[i].TestDuration.Get()) + ",";
-		Str += FString::SanitizeFloat(EvaluatedMetricParams[i].AggregatedTickTime.Get().GetMean()) + ",";
-		Str += FString::SanitizeFloat(EvaluatedMetricParams[i].AggregatedEntitiesMovementSpeed.Get().GetMean()) + ",";
-		
-		FAggregatedValueFloat MovSpeedSpacClust = EvaluatedMetricParams[i].AggregatedEntitiesMovementSpeedInClusters.GetInClusterChecked(0) +
-			EvaluatedMetricParams[i].AggregatedEntitiesMovementSpeedInClusters.GetInClusterChecked(1);
-		Str += FString::FromInt(MovSpeedSpacClust.GetMean()) + ",";
-		
-		FAggregatedValueFloat MovSpeedDenseClust = EvaluatedMetricParams[i].AggregatedEntitiesMovementSpeedInClusters.GetInClusterChecked(2);
-		Str += FString::FromInt(MovSpeedDenseClust.GetMean()) + ",";
-
-		int64 CollSpacClust = EvaluatedMetricParams[i].CollisionsCountInClusters.GetInClusterChecked(0) +
-			EvaluatedMetricParams[i].CollisionsCountInClusters.GetInClusterChecked(1);
-		Str += FString::FromInt(CollSpacClust) + ",";
-
-		int64 CollDenseClust = EvaluatedMetricParams[i].CollisionsCountInClusters.GetInClusterChecked(2);
-		Str += FString::FromInt(CollDenseClust) + ",";
-
-		Str += FString::SanitizeFloat(EvaluatedMetricParams[i].AverageEntityFinishedTime.Get());
-
-		Str += "\n";
+		EvaluatedMetricParams[i].WriteParamsValuesIntoString(Str);
 	}
-
-	// ToDo: save Areal parameters with a separate loop
 
 	const FString MetricsSaveFilePath = EvaluatorSavesPath + World->GetMapName() + "_Metrics_AsText.txt";
 	if (FFileHelper::SaveStringToFile(Str, *MetricsSaveFilePath))
@@ -320,26 +321,15 @@ bool UGameEvaluatorSubsystem::WriteEvaluationDataToFileAsText()
 		UE_LOG(LogTemp, Display, TEXT("[%hs] Saved evaluated metrics data as text."), __FUNCTION__);
 	}
 
+	// Write meta params ------
 	Str = "";
-	FString MetaHeaderStr = "MaxDetourCost,AgentsNum,DecColCountRate,SpeedSpacClust,SpeedDenseClust,RVOStrengthSpacClust,RVOStrengthDenseClust,RVORadiusSpacClust,RVORadiusDenseClust\n";
-	Str += MetaHeaderStr;
+	EvaluatedMetaParams[0].WriteParamsNamesIntoString(Str);
+	
 	Num = EvaluatedMetaParams.Num();
 	for (int32 i = 0; i < Num; i++)
 	{
-		Str += FString::FromInt(EvaluatedMetaParams[i].DetourMaxAdditionalCost.Value) + ",";
-		Str += FString::FromInt(EvaluatedMetaParams[i].AgentsNum.Value) + ",";
-		Str += FString::SanitizeFloat(EvaluatedMetaParams[i].DecrementCollisionsCountRate.Value) + ",";
-		Str += FString::SanitizeFloat(EvaluatedMetaParams[i].AgentMovementSpeedSpaciousCluster.Value) + ",";
-		Str += FString::SanitizeFloat(EvaluatedMetaParams[i].AgentMovementSpeedDenseCluster.Value) + ",";
-		Str += FString::SanitizeFloat(EvaluatedMetaParams[i].AvoidanceStrengthSpaciousCluster.Value) + ",";
-		Str += FString::SanitizeFloat(EvaluatedMetaParams[i].AvoidanceStrengthDenseCluster.Value) + ",";
-		Str += FString::SanitizeFloat(EvaluatedMetaParams[i].AvoidanceRadiusSpaciousCluster.Value) + ",";
-		Str += FString::SanitizeFloat(EvaluatedMetaParams[i].AvoidanceRadiusDenseCluster.Value);
-
-		Str += "\n";
+		EvaluatedMetaParams[i].WriteParamsValuesIntoString(Str);
 	}
-
-	// ToDo: save Areal parameters with a separate loop
 
 	const FString MetaSaveFilePath = EvaluatorSavesPath + World->GetMapName() + "_Meta_AsText.txt";
 	if (FFileHelper::SaveStringToFile(Str, *MetaSaveFilePath))
@@ -348,19 +338,6 @@ bool UGameEvaluatorSubsystem::WriteEvaluationDataToFileAsText()
 	}
 	
 	return false;
-}
-
-bool UGameEvaluatorSubsystem::TryLoadMapAreasConfigs()
-{
-	FString SavePath = EvaluatorSavesPath + MapAreasSubPath;
-
-	bLoadedMapAreasConfigs = true;
-
-	return true;
-}
-
-void UGameEvaluatorSubsystem::SaveMapAreasConfigs()
-{
 }
 
 void UGameEvaluatorSubsystem::ModifyMetaParams()
@@ -424,6 +401,7 @@ void UGameEvaluatorSubsystem::ApplyMetaParams() const
 	}
 
 	EntityManagerSubsystem->DefaultToTheSideAvoidanceDuration = MetaParams.DefaultToTheSideAvoidanceDuration.Value;
+	EntityManagerSubsystem->AvoidanceType = MetaParams.AvoidanceType.Value;
 	for (TEvaluatorMetaParam<float> MetaParam : MetaParams.ToTheSideAvoidanceDurationAreal.Get())
 	{
 		EntityManagerSubsystem->ToTheSideAvoidanceDurationInAreas.Add(MetaParam.Value);

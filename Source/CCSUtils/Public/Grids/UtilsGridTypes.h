@@ -201,4 +201,10 @@ struct CCSUTILS_API FGridBounds
 	{
 		return FGridCellPosition{(TopRightCell.X + BottomLeftCell.X) / 2, (TopRightCell.Y + BottomLeftCell.Y) / 2};
 	}
+
+	void Expand(int32 CellsNum)
+	{
+		BottomLeftCell = BottomLeftCell - FGridCellPosition{2, 2};
+		TopRightCell   = TopRightCell + FGridCellPosition{2, 2};
+	}
 };

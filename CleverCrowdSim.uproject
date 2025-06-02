@@ -33,6 +33,11 @@
 			"name": "Evaluator",
 			"type": "Runtime",
 			"loadingPhase": "Default"
+		},
+		{
+			"name": "ORCA",
+			"type": "Runtime",
+			"loadingPhase": "Default"
 		}
 	],
 	"Plugins": [
