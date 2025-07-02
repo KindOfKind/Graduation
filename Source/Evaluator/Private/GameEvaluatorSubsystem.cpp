@@ -96,7 +96,7 @@ void UGameEvaluatorSubsystem::OnTick(float DeltaTime)
 		MetricParams.AggregatedEntitiesMovementSpeedAreal.GetValueMutable(AreaType).AddValue(SpeedInArea);
 	}
 
-	if (World->GetTimeSeconds() > 600.f)
+	if (World->GetTimeSeconds() > 700.f)
 	{
 		bPendingTestFinish = true;
 	}
@@ -347,7 +347,7 @@ void UGameEvaluatorSubsystem::ModifyMetaParams()
 	MetaParams.TestsNum += 1;
 
 	// We don't want to use avoidance during the first test (when we configure areas) 
-	if (TestIteration == 0)
+	if (TestIteration == 0 && !bLoadedMapAreasConfigs)
 	{
 		for (TEvaluatorMetaParam<float>& MetaParam : MetaParams.AvoidanceStrengthAreal.Get())
 		{

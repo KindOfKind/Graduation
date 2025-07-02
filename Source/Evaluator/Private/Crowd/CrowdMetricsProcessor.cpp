@@ -163,14 +163,14 @@ int32 UCrowdMetricsProcessor::ReassignCrowdGroupToEntity(FMassEntityManager& Ent
 {
 	constexpr float SimilarityThreshold = 0.8f;	// If similarity is less than this threshold, a new CrowdGroup will be created
 	constexpr float ChangeGroupCost = 0.05f;
-	constexpr bool bEvaluateDirectionAtBiggerRange = true;
+	constexpr bool bEvaluateDirectionAtBiggerRange = false;
 	
 	const float SnapshotsTimeDiff = CrowdRegroupRate * MetricsSnapshotRate;
 
 	FCrowdAgentsEvaluationResult& Evaluation       = GameEvaluator->GetAgentsEvaluationResultMutable();
 	const int32 LastSnapshotIdx                    = Evaluation.GetSnapshotIndexAtTimeSafe(CurrentTime, MetricsSnapshotRate);
 	const int32 EarlySnapshotIdx                   = Evaluation.GetSnapshotIndexAtTimeSafe(CurrentTime - SnapshotsTimeDiff, MetricsSnapshotRate);
-	const int32 TwiceEarlySnapshotIdx              = Evaluation.GetSnapshotIndexAtTimeSafe(CurrentTime - SnapshotsTimeDiff - 10.f, MetricsSnapshotRate);	// Temp
+	const int32 TwiceEarlySnapshotIdx              = Evaluation.GetSnapshotIndexAtTimeSafe(CurrentTime - SnapshotsTimeDiff - 7.f, MetricsSnapshotRate);	// Temp
 	FCrowdAgentMetricsSnapshot& LastSnapshot       = Evaluation.GetSnapshot(EntityData.Entity, LastSnapshotIdx);
 	FCrowdAgentMetricsSnapshot& EarlySnapshot      = Evaluation.GetSnapshot(EntityData.Entity, EarlySnapshotIdx);
 	FCrowdAgentMetricsSnapshot& TwiceEarlySnapshot = Evaluation.GetSnapshot(EntityData.Entity, TwiceEarlySnapshotIdx);	// Temp
@@ -187,14 +187,12 @@ int32 UCrowdMetricsProcessor::ReassignCrowdGroupToEntity(FMassEntityManager& Ent
 		AccumulatedMetrics.StrongCollisions += DiffSnapshot.Metrics.StrongCollisions;
 	}
 	float AccumulatedMovementDirection = 0.f;	// Temp solution. We want to evaluate movement direction changes at a bigger time range
-	if (bEvaluateDirectionAtBiggerRange)
+	int32 MovementEarlySnapshotIdx = (bEvaluateDirectionAtBiggerRange ? TwiceEarlySnapshotIdx : EarlySnapshotIdx);
+	for (float SnapshotIdx = MovementEarlySnapshotIdx; SnapshotIdx < LastSnapshotIdx - 1; SnapshotIdx++)
 	{
-		for (float SnapshotIdx = TwiceEarlySnapshotIdx; SnapshotIdx < LastSnapshotIdx - 1; SnapshotIdx++)
-		{
-			FCrowdAgentMetricsSnapshot DiffSnapshot = FCrowdAgentMetricsSnapshot::GetSnapshotsDelta(
-				Evaluation.GetSnapshot(EntityData.Entity, SnapshotIdx), Evaluation.GetSnapshot(EntityData.Entity, SnapshotIdx + 1));
-			AccumulatedMovementDirection += DiffSnapshot.Metrics.MovementDirection.Rotation().Yaw;
-		}
+		FCrowdAgentMetricsSnapshot DiffSnapshot = FCrowdAgentMetricsSnapshot::GetSnapshotsDelta(
+			Evaluation.GetSnapshot(EntityData.Entity, SnapshotIdx), Evaluation.GetSnapshot(EntityData.Entity, SnapshotIdx + 1));
+		AccumulatedMovementDirection += DiffSnapshot.Metrics.MovementDirection.Rotation().Yaw;
 	}
 
 	FCrowdAgentMetricsMag DeltaMetrics = FCrowdAgentMetricsSnapshot::GetSnapshotsDeltaNormalized(

@@ -190,7 +190,17 @@ struct EVALUATOR_API TEvaluatorMetaParam
 			if (bIncrementOnly) Mult = 1;
 			Value += Step * Mult;
 		}
-		Value = FMath::Clamp(Value, Range.Min, Range.Max);
+		if (bIncrementOnly)
+		{
+			if (Value > Range.Max)
+			{
+				Value = Range.Min;
+			}
+		}
+		else
+		{
+			Value = FMath::Clamp(Value, Range.Min, Range.Max);
+		}
 	};
 };
 
@@ -273,16 +283,16 @@ struct EVALUATOR_API FEvaluatorMetaParamsContainer
 	TEvaluatorMetaParam<int32> AgentsNum{"AgentsNum", 4000, {20, 5000}, 0};
 	TEvaluatorMetaParam<float> DecrementCollisionsCountRate{"DecColCountRate", 0.5f, {0.3f, 0.9f}, 0.0f};
 	TEvaluatorMetaArealParam<float> AgentMovementSpeedAreal{{"Speed", 50.f, {40.f, 80.f}, 0.f}};
-	TEvaluatorMetaArealParam<float> AvoidanceStrengthAreal{{"AvoStr", 1.f, {0.f, 2.f}, 0.0f, false, false}};
-	TEvaluatorMetaArealParam<float> AvoidanceRadiusAreal{{"AvoRad", 120.f, {0.f, 200.f}, 30.f, false, false}};
+	TEvaluatorMetaArealParam<float> AvoidanceStrengthAreal{{"AvoStr", 1.f, {0.2f, 3.f}, 0.5f, false, true}};
+	TEvaluatorMetaArealParam<float> AvoidanceRadiusAreal{{"AvoRad", 150.f, {50.f, 270.f}, 40.f, false, true}};
 	TEvaluatorMetaArealParam<float> ToTheSideAvoidanceDurationAreal{{"SideAvoDur", 4.f, {0.f, 5.f}, 0.f, false, false}};
 	TEvaluatorMetaParam<float> DefaultToTheSideAvoidanceDuration{"SideAvoDur", 4.f, {0.f, 5.f}, 0.f, false, false};
-	TEvaluatorMetaParam<int32> AvoidanceType{"AvoidanceType", 1, {0, 2}, 1, false, true};	// Avoidance algorithms switcher. Currently, for all areas at once.
+	TEvaluatorMetaParam<int32> AvoidanceType{"AvoidanceType", 1, {0, 2}, 0, false, false};	// Avoidance algorithms switcher. Currently, for all areas at once.
 	
 	TEvaluatorMetaParam<float> AgentMovementSpeedSpaciousCluster{"SpeedClustSpac", 50.f, {40.f, 80.f}, 0.f};
 	TEvaluatorMetaParam<float> AgentMovementSpeedDenseCluster{"SpeedClustDense", 50.f, {40.f, 80.f}, 0.f};
 	TEvaluatorMetaParam<float> AvoidanceStrengthSpaciousCluster{"AvoStrClustSpac", 1.f, {0.f, 2.f}, 0.f, false, false};
-	TEvaluatorMetaParam<float> AvoidanceStrengthDenseCluster{"AvoStrClustDense", 0.8f, {0.f, 5.f}, 0.f, false, false};
+	TEvaluatorMetaParam<float> AvoidanceStrengthDenseCluster{"AvoStrClustDense", 1.0f, {0.f, 5.f}, 0.f, false, false};
 	TEvaluatorMetaParam<float> AvoidanceRadiusSpaciousCluster{"AvoRadClustSpac", 120.f, {0.f, 200.f}, 0.f, false, false};
 	TEvaluatorMetaParam<float> AvoidanceRadiusDenseCluster{"AvoRadClustDense", 120.f, {0.f, 200.f}, 0.f, false, false};
 
@@ -423,8 +433,8 @@ struct EVALUATOR_API FEvaluatorMetricParamsContainer
 	{
 		Ar << Container.TestDuration;
 		Ar << Container.AggregatedTickTime;
-		Ar << Container.AggregatedTickTime;
 		Ar << Container.AggregatedMassProcExecutionTime;
+		Ar << Container.AggregatedEntitiesMovementSpeed;
 		Ar << Container.AggregatedEntitiesMovementSpeedInClusters;
 		Ar << Container.AggregatedEntitiesMovementSpeedAreal;
 		Ar << Container.CollisionsCountInClusters;
@@ -572,9 +582,9 @@ struct EVALUATOR_API FCrowdAgentMetricsSnapshot
 	int32 CrowdGroupIndex = 0;
 
 	static constexpr float MaxDeltaLocation = 130.;	// Max delta per sec. 50 cm/s is a common agent movement speed.
-	static constexpr float MaxRotation = 35.f;
-	static constexpr int32 MaxDeltaWeakCollisions = 120;	// An optimal value is defined empirically
-	static constexpr int32 MaxDeltaStrongCollisions = 10;	// An optimal value is defined empirically
+	static constexpr float MaxRotation = 25.f;
+	static constexpr int32 MaxDeltaWeakCollisions = 85;	// An optimal value is defined empirically
+	static constexpr int32 MaxDeltaStrongCollisions = 5;	// An optimal value is defined empirically
 
 	// Calculates metrics delta and normalizes metrics in some predefined optimal ranges.
 	static FCrowdAgentMetricsMag GetSnapshotsDeltaNormalized(
